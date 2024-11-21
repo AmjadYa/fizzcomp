@@ -4,9 +4,8 @@ import sys
 import os
 import rospkg
 import rospy
-from PyQt5 import QtWidgets, uic
+from PyQt5 import QtWidgets, uic, QtCore
 from geometry_msgs.msg import Twist
-# Import other necessary ROS messages and services
 
 class ControllerGUI(QtWidgets.QMainWindow):
     def __init__(self):
@@ -39,6 +38,47 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.move_right.clicked.connect(self.move_right_function)
         self.auto_drive_toggle.clicked.connect(self.auto_drive_toggle_function)
         self.saveImage.clicked.connect(self.save_image_function)
+
+        # Initialize set to keep track of pressed keys
+        self.pressed_keys = set()
+
+        # Start a timer to call publish_movement at regular intervals
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.publish_movement)
+        self.timer.start(100)  # Every 100 ms (10 Hz)
+
+        # Ensure the window can accept focus and receive key events
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+
+    def keyPressEvent(self, event):
+        if not event.isAutoRepeat():
+            key = event.key()
+            self.pressed_keys.add(key)
+            # Optionally, you can call publish_movement() here if you want immediate response
+            # self.publish_movement()
+
+    def keyReleaseEvent(self, event):
+        if not event.isAutoRepeat():
+            key = event.key()
+            self.pressed_keys.discard(key)
+            # Optionally, stop movement immediately upon key release
+            # self.publish_movement()
+
+    def publish_movement(self):
+        twist = Twist()
+
+        # Check which keys are pressed and set the twist accordingly
+        if QtCore.Qt.Key_W in self.pressed_keys:
+            twist.linear.x += 1.0  # Adjust speed as needed
+        if QtCore.Qt.Key_S in self.pressed_keys:
+            twist.linear.x -= 1.0
+        if QtCore.Qt.Key_A in self.pressed_keys:
+            twist.angular.z += 1.0
+        if QtCore.Qt.Key_D in self.pressed_keys:
+            twist.angular.z -= 1.0
+
+        # Publish the twist message
+        self.pub_cmd_vel.publish(twist)
 
     def move_forward_function(self):
         twist = Twist()

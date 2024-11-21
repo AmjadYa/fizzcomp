@@ -7,4 +7,7 @@
 # new environment variables
 
 # modified environment variables
+export CMAKE_PREFIX_PATH="/home/fizzer/fizzcomp/devel:$CMAKE_PREFIX_PATH"
 export PWD='/home/fizzer/fizzcomp/build'
+export ROSLISP_PACKAGE_DIRECTORIES='/home/fizzer/fizzcomp/devel/share/common-lisp'
+export ROS_PACKAGE_PATH="/home/fizzer/fizzcomp/src:$ROS_PACKAGE_PATH"

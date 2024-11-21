@@ -1,0 +1,8 @@
+prefix=/home/fizzer/fizzcomp/devel
+
+Name: controller
+Description: Description of controller
+Version: 0.0.1
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: geometry_msgs rospy sensor_msgs std_msgs

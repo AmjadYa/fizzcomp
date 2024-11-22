@@ -5,4 +5,4 @@ Description: Description of controller
 Version: 0.0.1
 Cflags: 
 Libs: -L${prefix}/lib 
-Requires: geometry_msgs rospy sensor_msgs std_msgs
+Requires: geometry_msgs rospy sensor_msgs std_msgs cv_bridge image_transport

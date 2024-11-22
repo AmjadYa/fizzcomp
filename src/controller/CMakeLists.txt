@@ -7,20 +7,26 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   sensor_msgs
   std_msgs
+  cv_bridge
+  image_transport
 )
 
 ## Find Qt5 components
 find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
+## Find OpenCV
+find_package(OpenCV REQUIRED)
+
 ## Declare catkin package
 catkin_package(
-  CATKIN_DEPENDS geometry_msgs rospy sensor_msgs std_msgs
+  CATKIN_DEPENDS geometry_msgs rospy sensor_msgs std_msgs cv_bridge image_transport
 )
 
 ## Include directories
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${Qt5Widgets_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Install Python scripts

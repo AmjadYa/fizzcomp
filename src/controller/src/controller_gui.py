@@ -4,8 +4,12 @@ import sys
 import os
 import rospkg
 import rospy
-from PyQt5 import QtWidgets, uic, QtCore
+from PyQt5 import QtWidgets, uic, QtCore, QtGui
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
+import cv2
+import numpy as np
 
 class ControllerGUI(QtWidgets.QMainWindow):
     def __init__(self):
@@ -13,6 +17,9 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         # Initialize ROS node
         rospy.init_node('controller_gui_node', anonymous=True)
+
+        # Initialize CvBridge
+        self.bridge = CvBridge()
 
         # Get the path to the 'controller' package
         rospack = rospkg.RosPack()
@@ -33,6 +40,11 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.move_backward.setCheckable(True)
         self.move_left.setCheckable(True)
         self.move_right.setCheckable(True)
+
+        # Set 'Raw' as the default option in mainCombo
+        index = self.mainCombo.findText("Raw")
+        if index != -1:
+            self.mainCombo.setCurrentIndex(index)
 
         # Set up publishers
         self.pub_cmd_vel = rospy.Publisher('/B1/cmd_vel', Twist, queue_size=10)
@@ -59,6 +71,9 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self.publish_movement)
         self.timer.start(100)  # Every 100 ms (10 Hz)
 
+        # Subscribe to the image topic
+        self.image_sub = rospy.Subscriber('/B1/rrbot/camera1/image_raw', Image, self.image_callback)
+
         # Ensure the window can accept focus and receive key events
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
@@ -69,7 +84,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
             self.move_forward.setStyleSheet("background-color: green")
         else:
             self.move_forward.setStyleSheet("")
-        rospy.loginfo(f"Move Forward: {'On' if self.button_move_forward else 'Off'}")
+        # rospy.loginfo(f"Move Forward: {'On' if self.button_move_forward else 'Off'}")
 
     def toggle_move_backward(self):
         self.button_move_backward = self.move_backward.isChecked()
@@ -77,7 +92,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
             self.move_backward.setStyleSheet("background-color: green")
         else:
             self.move_backward.setStyleSheet("")
-        rospy.loginfo(f"Move Backward: {'On' if self.button_move_backward else 'Off'}")
+        # rospy.loginfo(f"Move Backward: {'On' if self.button_move_backward else 'Off'}")
 
     def toggle_move_left(self):
         self.button_move_left = self.move_left.isChecked()
@@ -85,7 +100,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
             self.move_left.setStyleSheet("background-color: green")
         else:
             self.move_left.setStyleSheet("")
-        rospy.loginfo(f"Move Left: {'On' if self.button_move_left else 'Off'}")
+        # rospy.loginfo(f"Move Left: {'On' if self.button_move_left else 'Off'}")
 
     def toggle_move_right(self):
         self.button_move_right = self.move_right.isChecked()
@@ -93,7 +108,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
             self.move_right.setStyleSheet("background-color: green")
         else:
             self.move_right.setStyleSheet("")
-        rospy.loginfo(f"Move Right: {'On' if self.button_move_right else 'Off'}")
+        # rospy.loginfo(f"Move Right: {'On' if self.button_move_right else 'Off'}")
 
     # Keyboard event handlers
     def keyPressEvent(self, event):
@@ -101,14 +116,14 @@ class ControllerGUI(QtWidgets.QMainWindow):
             key = event.key()
             if key in [QtCore.Qt.Key_W, QtCore.Qt.Key_A, QtCore.Qt.Key_S, QtCore.Qt.Key_D]:
                 self.pressed_keys.add(key)
-                rospy.logdebug(f"Key Pressed: {QtCore.Qt.keyToString(key)}")
+                # rospy.logdebug(f"Key Pressed: {QtCore.Qt.keyToString(key)}")
 
     def keyReleaseEvent(self, event):
         if not event.isAutoRepeat():
             key = event.key()
             if key in [QtCore.Qt.Key_W, QtCore.Qt.Key_A, QtCore.Qt.Key_S, QtCore.Qt.Key_D]:
                 self.pressed_keys.discard(key)
-                rospy.logdebug(f"Key Released: {QtCore.Qt.keyToString(key)}")
+                # rospy.logdebug(f"Key Released: {QtCore.Qt.keyToString(key)}")
 
     # Function to publish movement commands
     def publish_movement(self):
@@ -136,7 +151,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         # Publish the twist message
         self.pub_cmd_vel.publish(twist)
-        rospy.logdebug(f"Published Twist: linear.x={twist.linear.x}, angular.z={twist.angular.z}")
+        # rospy.logdebug(f"Published Twist: linear.x={twist.linear.x}, angular.z={twist.angular.z}")
 
     def auto_drive_toggle_function(self):
         # Implement the logic to toggle auto-drive mode
@@ -146,9 +161,37 @@ class ControllerGUI(QtWidgets.QMainWindow):
         # Implement the logic to save images from the robot's camera
         pass
 
+    # Image callback
+    def image_callback(self, msg):
+        try:
+            # Convert ROS Image message to OpenCV image
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+            # Convert the image to RGB format
+            cv_image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+            # Get image dimensions
+            height, width, channel = cv_image_rgb.shape
+            bytes_per_line = 3 * width
+
+            # Convert to QImage
+            qt_image = QtGui.QImage(cv_image_rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+            # Scale the image to fit the QLabel while maintaining aspect ratio
+            scaled_image = qt_image.scaled(self.mainfeed.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+
+            # Set the pixmap of the QLabel
+            self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+
+        except CvBridgeError as e:
+            rospy.logerr(f"CvBridge Error: {e}")
+
 if __name__ == '__main__':
-    rospy.init_node('controller_gui_node', anonymous=True)  # Initialize ROS node here to avoid issues with QApplication
+    # rospy.init_node('controller_gui_node', anonymous=True)  # Already initialized in __init__
     app = QtWidgets.QApplication(sys.argv)
     window = ControllerGUI()
     window.show()
-    sys.exit(app.exec_())
+    try:
+        sys.exit(app.exec_())
+    except rospy.ROSInterruptException:
+        pass

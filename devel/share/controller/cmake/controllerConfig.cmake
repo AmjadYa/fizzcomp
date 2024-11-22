@@ -185,7 +185,7 @@ foreach(t ${controller_EXPORTED_TARGETS})
   endif()
 endforeach()
 
-set(depends "geometry_msgs;rospy;sensor_msgs;std_msgs")
+set(depends "geometry_msgs;rospy;sensor_msgs;std_msgs;cv_bridge;image_transport")
 foreach(depend ${depends})
   string(REPLACE " " ";" depend_list ${depend})
   # the package name of the dependency must be kept in a unique variable so that it is not overwritten in recursive calls

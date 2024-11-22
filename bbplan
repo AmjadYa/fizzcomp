@@ -1,0 +1,17 @@
+inverse perspective transform
+- look it up
+
+how to find
+- blue is unique
+- binarize the image 
+- where is the first white pixel on x and last
+- where is the first pixel on y and last 
+-OR YOU CAN SAY GIVE ME A POLYGON USING OPENCV
+- invtpptft TRANSFORM THOSE points on a rectangle, in the same order of x1y1 -> x2y2
+-
+
+
+- 8 bits (dont worry yet for quantization)
+
+FOR NEXT TIME
+- work on 

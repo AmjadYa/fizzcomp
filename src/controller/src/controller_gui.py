@@ -163,6 +163,8 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
     # Image callback
     def image_callback(self, msg):
+        if self.mainCombo.currentText() != "Raw":
+            return
         try:
             # Convert ROS Image message to OpenCV image
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -174,7 +176,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
             height, width, channel = cv_image_rgb.shape
             bytes_per_line = 3 * width
 
-            # Convert to QImage
+            # Convert to QImage for mainfeed
             qt_image = QtGui.QImage(cv_image_rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
 
             # Scale the image to fit the QLabel while maintaining aspect ratio
@@ -183,8 +185,54 @@ class ControllerGUI(QtWidgets.QMainWindow):
             # Set the pixmap of the QLabel
             self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
 
+            # ---- Billboard Processing ----
+
+            # Create a mask for pixels with:
+            # Blue >= 99, Green <= 100, Red <= 100
+            blue_channel = cv_image_rgb[:, :, 2]
+            green_channel = cv_image_rgb[:, :, 1]
+            red_channel = cv_image_rgb[:, :, 0]
+
+            mask = (blue_channel >= 99) & (green_channel <= 100) & (red_channel <= 100)
+
+            # Create a binary (black and white) image based on the mask
+            binary_image = np.where(mask, 255, 0).astype(np.uint8)
+
+            # Convert the binary image to RGB format for display
+            binary_image_rgb = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2RGB)
+
+            # Convert to QImage for billboard
+            qt_billboard_image = QtGui.QImage(binary_image_rgb.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
+
+            # Scale the image to fit the billboard QLabel while maintaining aspect ratio
+            scaled_billboard_image = qt_billboard_image.scaled(self.billboard.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+
+            # Set the pixmap of the billboard QLabel
+            self.billboard.setPixmap(QtGui.QPixmap.fromImage(scaled_billboard_image))
+
+            # ---- Billboard Indicator ----
+
+            # Check if any pixels meet the condition
+            if np.any(mask):
+                # Set the billboard indicator to green
+                self.label_billboard_indicator.setStyleSheet("""
+                    QLabel {
+                        background-color: green;
+                        border-radius: 10px;
+                    }
+                """)
+            else:
+                # Set the billboard indicator to red
+                self.label_billboard_indicator.setStyleSheet("""
+                    QLabel {
+                        background-color: red;
+                        border-radius: 10px;
+                    }
+                """)
+
         except CvBridgeError as e:
             rospy.logerr(f"CvBridge Error: {e}")
+
 
 if __name__ == '__main__':
     # rospy.init_node('controller_gui_node', anonymous=True)  # Already initialized in __init__

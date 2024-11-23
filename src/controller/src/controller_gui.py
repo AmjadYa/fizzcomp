@@ -46,6 +46,11 @@ class ControllerGUI(QtWidgets.QMainWindow):
         if index != -1:
             self.mainCombo.setCurrentIndex(index)
 
+        # Set 'Raw' as the default option in billCombo
+        bill_index = self.billCombo.findText("Raw")
+        if bill_index != -1:
+            self.billCombo.setCurrentIndex(bill_index)
+
         # Set up publishers
         self.pub_cmd_vel = rospy.Publisher('/B1/cmd_vel', Twist, queue_size=10)
 
@@ -161,59 +166,192 @@ class ControllerGUI(QtWidgets.QMainWindow):
         # Implement the logic to save images from the robot's camera
         pass
 
-    # Image callback
+    # Helper function to outline the largest contour on a binary image
+    def outline_largest_contour(self, binary_image):
+        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None  # No contours found
+
+        # Find the largest contour by area
+        largest_contour = max(contours, key=cv2.contourArea)
+
+        # Draw the largest contour on the binary image
+        outlined_image = binary_image.copy()
+        cv2.drawContours(outlined_image, [largest_contour], -1, 255, 2)  # White color (thickness 2)
+
+        return outlined_image
+
+    # Helper function to perform inverse perspective transform
+    def inverse_perspective_transform(self, outlined_image):
+        contours, _ = cv2.findContours(outlined_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None  # No contours found
+
+        # Find the largest contour by area
+        largest_contour = max(contours, key=cv2.contourArea)
+
+        # Approximate the contour to a polygon
+        peri = cv2.arcLength(largest_contour, True)
+        approx = cv2.approxPolyDP(largest_contour, 0.02 * peri, True)  # 2% approximation
+
+        if len(approx) != 4:
+            # Not a quadrilateral; cannot perform perspective transform
+            rospy.logwarn("Largest contour is not a quadrilateral. Skipping perspective transform.")
+            return None
+
+        # Order the points in consistent order: top-left, top-right, bottom-right, bottom-left
+        pts = approx.reshape(4, 2)
+        rect = self.order_points(pts)
+
+        # Compute the width and height of the new image
+        (tl, tr, br, bl) = rect
+        widthA = np.linalg.norm(br - bl)
+        widthB = np.linalg.norm(tr - tl)
+        maxWidth = max(int(widthA), int(widthB))
+
+        heightA = np.linalg.norm(tr - br)
+        heightB = np.linalg.norm(tl - bl)
+        maxHeight = max(int(heightA), int(heightB))
+
+        # Destination points for the perspective transform
+        dst = np.array([
+            [0, 0],
+            [maxWidth - 1, 0],
+            [maxWidth - 1, maxHeight - 1],
+            [0, maxHeight - 1]
+        ], dtype="float32")
+
+        # Compute the perspective transform matrix
+        M = cv2.getPerspectiveTransform(rect, dst)
+
+        # Apply the perspective transform
+        warped = cv2.warpPerspective(outlined_image, M, (maxWidth, maxHeight))
+
+        return warped
+
+    # Helper function to order points
+    def order_points(self, pts):
+        # Initialize a list of coordinates that will be ordered
+        rect = np.zeros((4, 2), dtype="float32")
+
+        # Sum and difference to find top-left and bottom-right
+        s = pts.sum(axis=1)
+        diff = np.diff(pts, axis=1)
+
+        rect[0] = pts[np.argmin(s)]       # Top-left
+        rect[2] = pts[np.argmax(s)]       # Bottom-right
+        rect[1] = pts[np.argmin(diff)]    # Top-right
+        rect[3] = pts[np.argmax(diff)]    # Bottom-left
+
+        return rect
+
     def image_callback(self, msg):
-        if self.mainCombo.currentText() != "Raw":
-            return
+        # Process mainfeed based on mainCombo selection (existing functionality)
+        if self.mainCombo.currentText() == "Raw":
+            try:
+                # Convert ROS Image message to OpenCV image
+                cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+                # Convert the image to RGB format
+                cv_image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+
+                # Get image dimensions
+                height, width, channel = cv_image_rgb.shape
+                bytes_per_line = 3 * width
+
+                # Convert to QImage for mainfeed
+                qt_image = QtGui.QImage(cv_image_rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+                # Scale the image to fit the QLabel while maintaining aspect ratio
+                scaled_image = qt_image.scaled(self.mainfeed.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+
+                # Set the pixmap of the QLabel
+                self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+
+            except CvBridgeError as e:
+                rospy.logerr(f"CvBridge Error: {e}")
+
+        # Process billboard based on billCombo selection
+        bill_selection = self.billCombo.currentText()
+
         try:
             # Convert ROS Image message to OpenCV image
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
-            # Convert the image to RGB format
-            cv_image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+            # Convert the image to HSV color space
+            hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
-            # Get image dimensions
-            height, width, channel = cv_image_rgb.shape
-            bytes_per_line = 3 * width
+            # Define the lower and upper bounds for the target color (e.g., blue)
+            lower_color = np.array([100, 120, 0])  
+            upper_color = np.array([140, 255, 255]) 
 
-            # Convert to QImage for mainfeed
-            qt_image = QtGui.QImage(cv_image_rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
 
-            # Scale the image to fit the QLabel while maintaining aspect ratio
-            scaled_image = qt_image.scaled(self.mainfeed.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            # Create a binary mask where the target color is white and the rest is black
+            mask = cv2.inRange(hsv_image, lower_color, upper_color)
 
-            # Set the pixmap of the QLabel
-            self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+            # Blur the whites
+            # mask = cv2.GaussianBlur(mask, (1, 1), 0)
 
-            # ---- Billboard Processing ----
+            # Apply morphological operations to remove noise and smooth the mask
+            kernel = np.ones((1, 1), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-            # Create a mask for pixels with:
-            # Blue >= 99, Green <= 100, Red <= 100
-            blue_channel = cv_image_rgb[:, :, 2]
-            green_channel = cv_image_rgb[:, :, 1]
-            red_channel = cv_image_rgb[:, :, 0]
+            # Initialize variables
+            processed_image = mask.copy()  # Start with the cleaned binary image
+            quadrilateral_found = False  # Flag for billboard indicator
 
-            mask = (blue_channel >= 99) & (green_channel <= 100) & (red_channel <= 100)
+            if bill_selection == "Raw":
+                # Display the cleaned binary image directly
+                processed_image_display = mask
 
-            # Create a binary (black and white) image based on the mask
-            binary_image = np.where(mask, 255, 0).astype(np.uint8)
+            elif bill_selection == "Grayscale":
+                # Outline the largest quadrilateral contour on the cleaned binary image
+                outlined_image = self.outline_largest_contour(mask)
+                if outlined_image is not None:
+                    processed_image_display = outlined_image
+                else:
+                    processed_image_display = mask
 
-            # Convert the binary image to RGB format for display
-            binary_image_rgb = cv2.cvtColor(binary_image, cv2.COLOR_GRAY2RGB)
+            elif bill_selection == "Contour View":
+                # Outline the largest quadrilateral contour on the cleaned binary image
+                outlined_image = self.outline_largest_contour(mask)
+                if outlined_image is not None:
+                    # Attempt inverse perspective transform
+                    warped_image = self.inverse_perspective_transform(outlined_image)
+                    if warped_image is not None:
+                        processed_image_display = warped_image
+                        quadrilateral_found = True  # IPT successful
+                    else:
+                        processed_image_display = outlined_image
+                else:
+                    processed_image_display = mask
 
-            # Convert to QImage for billboard
-            qt_billboard_image = QtGui.QImage(binary_image_rgb.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
+            else:
+                rospy.logwarn(f"Unknown billCombo selection: {bill_selection}")
+                processed_image_display = mask
+
+            # Convert processed image to QImage for display
+            if len(processed_image_display.shape) == 2:
+                # Grayscale image
+                height, width = processed_image_display.shape
+                bytes_per_line = width
+                qt_image = QtGui.QImage(processed_image_display.data, width, height, bytes_per_line, QtGui.QImage.Format_Grayscale8)
+            else:
+                # Color image (warped_image should be color if IPT was successful)
+                processed_image_rgb = cv2.cvtColor(processed_image_display, cv2.COLOR_BGR2RGB)
+                height, width, channel = processed_image_rgb.shape
+                bytes_per_line = 3 * width
+                qt_image = QtGui.QImage(processed_image_rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888)
 
             # Scale the image to fit the billboard QLabel while maintaining aspect ratio
-            scaled_billboard_image = qt_billboard_image.scaled(self.billboard.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            scaled_image = qt_image.scaled(self.billboard.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
 
             # Set the pixmap of the billboard QLabel
-            self.billboard.setPixmap(QtGui.QPixmap.fromImage(scaled_billboard_image))
+            self.billboard.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
 
             # ---- Billboard Indicator ----
-
-            # Check if any pixels meet the condition
-            if np.any(mask):
+            if bill_selection == "Contour View" and quadrilateral_found:
                 # Set the billboard indicator to green
                 self.label_billboard_indicator.setStyleSheet("""
                     QLabel {

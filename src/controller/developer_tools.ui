@@ -99,12 +99,12 @@
     </item>
     <item>
      <property name="text">
-      <string>Grayscale</string>
+      <string>Contour</string>
      </property>
     </item>
     <item>
      <property name="text">
-      <string>Contour View</string>
+      <string>Homography</string>
      </property>
     </item>
    </widget>

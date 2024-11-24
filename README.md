@@ -1,8 +1,7 @@
 # Nov 21st, 2024
 Fixing robot dimensions (I LIED DIDN'T DO THIS YET), integrating dev tools ui
 # Nov 24th, 2024
-I made a change to the nested 2024_competition repo to allow me to change the billboard
-It was hard to explain in the commit message... anyways
+I made a change to the nested 2024_competition repo to allow me to change the billboard. It was hard to explain in the commit message... anyways
 
 # NEXT STAGE
 

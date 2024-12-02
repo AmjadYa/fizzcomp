@@ -91,6 +91,72 @@ class ControllerGUI(QtWidgets.QMainWindow):
         # Ensure the window can accept focus and receive key events
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
+        # ----- Added Section: Initialize Sliders and Labels for HSV -----
+
+        # Default HSV bounds
+        self.lower_color = np.array([0, 0, 174])
+        self.upper_color = np.array([179, 91, 255])
+
+        # Set default slider values for lower bounds
+        self.hSlider.setMinimum(0)
+        self.hSlider.setMaximum(179)
+        self.hSlider.setValue(self.lower_color[0])
+        self.sSlider.setMinimum(0)
+        self.sSlider.setMaximum(255)
+        self.sSlider.setValue(self.lower_color[1])
+        self.vSlider.setMinimum(0)
+        self.vSlider.setMaximum(255)
+        self.vSlider.setValue(self.lower_color[2])
+
+        # Set default slider values for upper bounds
+        self.hSlider_2.setMinimum(0)
+        self.hSlider_2.setMaximum(179)
+        self.hSlider_2.setValue(self.upper_color[0])
+        self.sSlider_2.setMinimum(0)
+        self.sSlider_2.setMaximum(255)
+        self.sSlider_2.setValue(self.upper_color[1])
+        self.vSlider_2.setMinimum(0)
+        self.vSlider_2.setMaximum(255)
+        self.vSlider_2.setValue(self.upper_color[2])
+
+        # Update labels with default slider values
+        self.hText.setText(str(self.hSlider.value()))
+        self.sText.setText(str(self.sSlider.value()))
+        self.vText.setText(str(self.vSlider.value()))
+        self.hText_2.setText(str(self.hSlider_2.value()))
+        self.sText_2.setText(str(self.sSlider_2.value()))
+        self.vText_2.setText(str(self.vSlider_2.value()))
+
+        # Connect sliders to their respective update functions
+        self.hSlider.valueChanged.connect(self.update_hText)
+        self.sSlider.valueChanged.connect(self.update_sText)
+        self.vSlider.valueChanged.connect(self.update_vText)
+        self.hSlider_2.valueChanged.connect(self.update_hText_2)
+        self.sSlider_2.valueChanged.connect(self.update_sText_2)
+        self.vSlider_2.valueChanged.connect(self.update_vText_2)
+
+        # ----- End of Added Section -----
+
+    # ----- Added Section: Slider Update Functions -----
+    def update_hText(self, value):
+        self.hText.setText(str(value))
+
+    def update_sText(self, value):
+        self.sText.setText(str(value))
+
+    def update_vText(self, value):
+        self.vText.setText(str(value))
+
+    def update_hText_2(self, value):
+        self.hText_2.setText(str(value))
+
+    def update_sText_2(self, value):
+        self.sText_2.setText(str(value))
+
+    def update_vText_2(self, value):
+        self.vText_2.setText(str(value))
+    # ----- End of Added Section -----
+
     # Toggle functions for GUI buttons
     def toggle_move_forward(self):
         self.button_move_forward = self.move_forward.isChecked()
@@ -282,8 +348,10 @@ class ControllerGUI(QtWidgets.QMainWindow):
         return rect
 
     def image_callback(self, msg):
-        # Process mainfeed based on mainCombo selection (existing functionality)
-        if self.mainCombo.currentText() == "Raw":
+        # Process mainfeed based on mainCombo selection
+        main_selection = self.mainCombo.currentText()
+
+        if main_selection == "Raw":
             try:
                 # Convert ROS Image message to OpenCV image
                 cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -307,6 +375,55 @@ class ControllerGUI(QtWidgets.QMainWindow):
             except CvBridgeError as e:
                 rospy.logerr(f"CvBridge Error: {e}")
 
+        elif main_selection == "HSV":
+            try:
+                # Retrieve current HSV bounds from sliders
+                lower_h = self.hSlider.value()
+                lower_s = self.sSlider.value()
+                lower_v = self.vSlider.value()
+                upper_h = self.hSlider_2.value()
+                upper_s = self.sSlider_2.value()
+                upper_v = self.vSlider_2.value()
+
+                # Update lower and upper color arrays
+                lower_color = np.array([lower_h, lower_s, lower_v])
+                upper_color = np.array([upper_h, upper_s, upper_v])
+
+                # Convert ROS Image message to OpenCV image
+                cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+                # Convert the image to HSV color space
+                hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
+
+                # Create a binary mask where the target color is white and the rest is black
+                mask = cv2.inRange(hsv_image, lower_color, upper_color)
+
+                # Apply morphological operations to remove noise and smooth the mask
+                kernel = np.ones((1, 10), np.uint8)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+                # Display the processed mask
+                processed_image_display = mask
+
+                # Convert processed image to QImage for display
+                height, width = processed_image_display.shape
+                bytes_per_line = width
+                qt_image = QtGui.QImage(processed_image_display.data, width, height, bytes_per_line, QtGui.QImage.Format_Grayscale8)
+
+                # Scale the image to fit the mainfeed QLabel while maintaining aspect ratio
+                scaled_image = qt_image.scaled(self.mainfeed.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+
+                # Set the pixmap of the mainfeed QLabel
+                self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+
+            except CvBridgeError as e:
+                rospy.logerr(f"CvBridge Error: {e}")
+
+        else:
+            rospy.logwarn(f"Unknown mainCombo selection: {main_selection}")
+            # Optionally, handle other cases or default behavior
+
         # Process billboard based on billCombo selection
         bill_selection = self.billCombo.currentText()
 
@@ -318,11 +435,11 @@ class ControllerGUI(QtWidgets.QMainWindow):
             hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
             # Define the lower and upper bounds for the target color (e.g., blue)
-            lower_color = np.array([100, 120, 0])  
-            upper_color = np.array([140, 255, 255]) 
+            lower_color_bill = np.array([100, 120, 0])  
+            upper_color_bill = np.array([140, 255, 255]) 
 
             # Create a binary mask where the target color is white and the rest is black
-            mask = cv2.inRange(hsv_image, lower_color, upper_color)
+            mask = cv2.inRange(hsv_image, lower_color_bill, upper_color_bill)
 
             # Apply morphological operations to remove noise and smooth the mask
             kernel = np.ones((1, 1), np.uint8)

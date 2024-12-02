@@ -11,13 +11,10 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import numpy as np
 import datetime
-
 from PyQt5.QtCore import pyqtSignal
-
-# ----- New Imports -----
 from gazebo_msgs.srv import SetModelState, SetModelStateRequest
 from gazebo_msgs.msg import ModelState
-# ------------------------
+from tensorflow.keras.models import load_model
 
 class ControllerGUI(QtWidgets.QMainWindow):
     # Define a signal that carries the processed image and billCombo selection
@@ -28,6 +25,21 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         # Initialize ROS node
         rospy.init_node('controller_gui_node', anonymous=True)
+
+        # Get the path to the 'controller' package
+        rospack = rospkg.RosPack()
+        package_path = rospack.get_path('controller')
+
+        # Path to your CNN model file
+        model_path = os.path.join(package_path, 'models', 'character_recognition_model.h5')
+
+        # Try to load the model
+        try:
+            self.cnn_model = load_model(model_path, compile=False)
+            rospy.loginfo(f"Successfully loaded CNN model from {model_path}")
+        except Exception as e:
+            rospy.logerr(f"Failed to load CNN model: {e}")
+            sys.exit(1)
 
         # Initialize CvBridge
         self.bridge = CvBridge()
@@ -96,8 +108,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
         # Ensure the window can accept focus and receive key events
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
-        # ----- Added Section: Initialize Sliders and Labels for HSV -----
-
         # Default HSV bounds
         self.lower_color = np.array([0, 0, 174])
         self.upper_color = np.array([179, 91, 255])
@@ -140,9 +150,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.sSlider_2.valueChanged.connect(self.update_sText_2)
         self.vSlider_2.valueChanged.connect(self.update_vText_2)
 
-        # ----- End of Added Section -----
-
-        # ----- New Section: Define Teleport Positions -----
         self.teleport_positions = {
             'TP1': {
                 'position': {'x': 5.49942880783774, 'y': 2.504030700996579, 'z': 0.04000039797012949},
@@ -177,7 +184,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
                 'orientation': {'x': -0.0057606116672731245, 'y': -0.013744051998107805, 'z': -0.0008294302102146539, 'w': -0.9998886080126218}
             }
         }
-        # ----- End of New Section -----
 
         # ----- New Section: Set Up Teleport Service Proxy -----
         rospy.loginfo("Waiting for /gazebo/set_model_state service...")
@@ -242,7 +248,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
             rospy.logerr(f"Service call failed: {e}")
     # ----- End of New Section -----
 
-    # ----- Existing Methods Below -----
     def toggle_move_forward(self):
         self.button_move_forward = self.move_forward.isChecked()
         if self.button_move_forward:

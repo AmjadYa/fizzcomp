@@ -56,3 +56,7 @@ if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/controller" TYPE PROGRAM FILES "/home/fizzer/fizzcomp/build/controller/catkin_generated/installspace/controller_gui.py")
 endif()
 
+if("x${CMAKE_INSTALL_COMPONENT}x" STREQUAL "xUnspecifiedx" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/controller/models" TYPE DIRECTORY FILES "/home/fizzer/fizzcomp/src/controller/models/" FILES_MATCHING REGEX "/[^/]*\\.h5$")
+endif()
+

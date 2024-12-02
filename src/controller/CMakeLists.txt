@@ -34,3 +34,9 @@ catkin_install_python(PROGRAMS
   src/controller_gui.py  # Adjust the path if needed
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+# Install model files
+install(DIRECTORY models/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/models
+  FILES_MATCHING PATTERN "*.h5"
+)

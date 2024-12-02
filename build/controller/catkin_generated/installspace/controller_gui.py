@@ -2,6 +2,7 @@
 
 import sys
 import os
+from matplotlib import pyplot as plt
 import rospkg
 import rospy
 from PyQt5 import QtWidgets, uic, QtCore, QtGui
@@ -16,6 +17,7 @@ from gazebo_msgs.srv import SetModelState, SetModelStateRequest
 from gazebo_msgs.msg import ModelState
 from tensorflow.keras.models import load_model
 import math
+from teleport_functions import TeleportHandler
 
 # Define image dimensions
 IMAGE_WIDTH, IMAGE_HEIGHT = 34, 55  # Adjust as needed based on your data
@@ -58,7 +60,7 @@ label_dict = {
     '7': 33, 
     '8': 34, 
     '9': 35, 
-    'SPACE': 36
+    '': 36
 }
 
 def extract_letters_from_image(img, base_width=34, base_height=55, tolerance=5, extend_width=36, extend_height=73, space_threshold=30):
@@ -131,17 +133,17 @@ def extract_letters_from_image(img, base_width=34, base_height=55, tolerance=5, 
 
     # Optional: Display results
     # Uncomment if you want to visualize the letters
-    # num_letters = len(final_letters)
-    # cols = min(10, num_letters)
-    # rows = math.ceil(num_letters / cols)
+    num_letters = len(final_letters)
+    cols = min(10, num_letters)
+    rows = math.ceil(num_letters / cols)
 
-    # plt.figure(figsize=(cols * 2, rows * 2))
-    # for idx, letter in enumerate(final_letters):
-    #     plt.subplot(rows, cols, idx + 1)
-    #     plt.imshow(letter, cmap='gray')
-    #     plt.axis('off')
-    # plt.tight_layout()
-    # plt.show()
+    plt.figure(figsize=(cols * 2, rows * 2))
+    for idx, letter in enumerate(final_letters):
+        plt.subplot(rows, cols, idx + 1)
+        plt.imshow(letter, cmap='gray')
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
 
     print(f"Total letters and spaces extracted: {len(final_letters)}")
     return final_letters
@@ -196,6 +198,9 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         # Initialize ROS node
         rospy.init_node('controller_gui_node', anonymous=True)
+
+        # Initialize TeleportHandler
+        self.teleport_handler = TeleportHandler(model_name='B1')
 
         # Get the path to the 'controller' package
         rospack = rospkg.RosPack()
@@ -319,7 +324,21 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.sSlider_2.valueChanged.connect(self.update_sText_2)
         self.vSlider_2.valueChanged.connect(self.update_vText_2)
 
-        # Teleport positions and service setup (omitted for brevity)
+        # ----- New Section: Connect TP Buttons to Teleport Functions -----
+        # Connect TP Buttons to Teleport Functions using teleport_handler
+        self.TP1.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP1'))
+        self.TP2.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP2'))
+        self.TP3.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP3'))
+        self.TP4.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP4'))
+        self.TP5.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP5'))
+        self.TP6.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP6'))
+        self.TP7.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP7'))
+        self.TP8.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP8'))
+
+        # ----- End of New Section -----
+
+    def teleport_to_position(self, tp_name):
+        pass
 
     def load_cnn_model(self, model_path):
         """
@@ -695,21 +714,25 @@ class ControllerGUI(QtWidgets.QMainWindow):
             # Convert QPixmap to QImage
             qimage = pixmap.toImage()
 
-            # Convert QImage to NumPy array
-            qimage = qimage.convertToFormat(QtGui.QImage.Format.Format_BGR888)
+            # Convert QImage to RGB888 format
+            qimage = qimage.convertToFormat(QtGui.QImage.Format_RGB888)  # Keep RGB
+
             width = qimage.width()
             height = qimage.height()
-            ptr = qimage.bits()
-            ptr.setsize(qimage.byteCount())
-            img = np.array(ptr).reshape(height, width, 3)
+
+            # Retrieve image data as bytes
+            buffer = qimage.bits().asstring(qimage.byteCount())
+
+            # Convert bytes to NumPy array
+            img = np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 3)  # RGB format
 
             # Start the prediction thread
             self.prediction_thread = PredictionThread(
                 img, 
                 self.cnn_model, 
                 self.inverse_label_dict, 
-                self.IMAGE_WIDTH, 
-                self.IMAGE_HEIGHT
+                IMAGE_WIDTH, 
+                IMAGE_HEIGHT
             )
             self.prediction_thread.prediction_complete.connect(self.on_prediction_complete)
             self.prediction_thread.prediction_failed.connect(self.on_prediction_failed)

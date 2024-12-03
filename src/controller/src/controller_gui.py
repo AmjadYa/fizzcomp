@@ -12,16 +12,21 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import datetime
 from PyQt5.QtCore import pyqtSignal
-#from tensorflow.keras.models import load_model  # This can be removed if not used elsewhere
+# from tensorflow.keras.models import load_model  # This can be removed if not used elsewhere
 sys.path.append('/home/fizzer/fizzcomp/src/controller/src')
-#print(os.path.abspath(__file__))
+# print(os.path.abspath(__file__))
 from teleport_functions import TeleportHandler
 # Import prediction-related components from prediction_module.py
 from prediction_module import load_cnn_model, PredictionThread, inverse_label_dict, IMAGE_WIDTH, IMAGE_HEIGHT
+# Import the DataLogger class
+from data_logger import DataLogger  
 
 class ControllerGUI(QtWidgets.QMainWindow):
     # Define a signal that carries the processed image and billCombo selection
     image_update_signal = pyqtSignal(np.ndarray, str)
+    
+    # Define a signal to send data to DataLogger
+    data_signal = pyqtSignal(np.ndarray, float, float)
 
     def __init__(self):
         super(ControllerGUI, self).__init__()
@@ -43,7 +48,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.bridge = CvBridge()
 
         # Construct the full path to 'developer_tools.ui'
-        ui_file = os.path.join(package_path, 'developer_tools.ui')  # Adjust if it's in a subdirectory
+        ui_file = os.path.join(package_path, 'developer_tools.ui')
 
         # Load the UI file
         if not os.path.exists(ui_file):
@@ -100,6 +105,17 @@ class ControllerGUI(QtWidgets.QMainWindow):
         # Connect the image update signal to the update_billboard slot
         self.image_update_signal.connect(self.update_billboard)
 
+        # Initialize the DataLogger
+        self.data_logger = DataLogger()
+
+        # Connect the data_signal to DataLogger's receive_data slot
+        self.data_signal.connect(self.data_logger.receive_data)
+
+        # Connect Record button and Record indicator
+        self.monitor_manual_driving.clicked.connect(self.toggle_recording)
+        self.is_recording = False  # Initial state
+        self.update_record_indicator()
+
         # Ensure the window can accept focus and receive key events
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
@@ -155,6 +171,57 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.TP7.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP7'))
         self.TP8.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP8'))
 
+    def publish_movement(self):
+        twist = Twist()
+
+        # Keyboard-controlled movement
+        if QtCore.Qt.Key_W in self.pressed_keys:
+            twist.linear.x += 3.0  # Move forward
+        if QtCore.Qt.Key_S in self.pressed_keys:
+            twist.linear.x -= 3.0  # Move backward
+        if QtCore.Qt.Key_A in self.pressed_keys:
+            twist.angular.z += 2.0  # Turn left
+        if QtCore.Qt.Key_D in self.pressed_keys:
+            twist.angular.z -= 2.0  # Turn right
+
+        # Button-controlled movement
+        if self.button_move_forward:
+            twist.linear.x += 1.0
+        if self.button_move_backward:
+            twist.linear.x -= 1.0
+        if self.button_move_left:
+            twist.angular.z += 1.0
+        if self.button_move_right:
+            twist.angular.z -= 1.0
+
+        # Store the latest twist values for the DataLogger
+        self.latest_linear_x = twist.linear.x
+        self.latest_angular_z = twist.angular.z
+
+        # Publish the twist message
+        self.pub_cmd_vel.publish(twist)
+        # rospy.logdebug(f"Published Twist: linear.x={twist.linear.x}, angular.z={twist.angular.z}")
+
+        # Emit data to DataLogger
+        self.data_signal.emit(self.latest_image, self.latest_linear_x, self.latest_angular_z)
+
+    def toggle_recording(self):
+        if not self.is_recording:
+            # Start recording
+            self.data_logger.start_logging()
+            self.is_recording = True
+        else:
+            # Stop recording
+            self.data_logger.stop_logging()
+            self.is_recording = False
+        self.update_record_indicator()
+
+    def update_record_indicator(self):
+        if self.is_recording:
+            self.record_indicator.setStyleSheet("QLabel { background-color: green; border-radius: 10px; }")
+        else:
+            self.record_indicator.setStyleSheet("QLabel { background-color: red; border-radius: 10px; }")
+
     def toggle_move_forward(self):
         self.button_move_forward = self.move_forward.isChecked()
         if self.button_move_forward:
@@ -195,34 +262,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
             key = event.key()
             if key in [QtCore.Qt.Key_W, QtCore.Qt.Key_A, QtCore.Qt.Key_S, QtCore.Qt.Key_D]:
                 self.pressed_keys.discard(key)
-
-    # Function to publish movement commands
-    def publish_movement(self):
-        twist = Twist()
-
-        # Keyboard-controlled movement
-        if QtCore.Qt.Key_W in self.pressed_keys:
-            twist.linear.x += 5.0  # Move forward
-        if QtCore.Qt.Key_S in self.pressed_keys:
-            twist.linear.x -= 5.0  # Move backward
-        if QtCore.Qt.Key_A in self.pressed_keys:
-            twist.angular.z += 3.0  # Turn left
-        if QtCore.Qt.Key_D in self.pressed_keys:
-            twist.angular.z -= 3.0  # Turn right
-
-        # Button-controlled movement
-        if self.button_move_forward:
-            twist.linear.x += 1.0
-        if self.button_move_backward:
-            twist.linear.x -= 1.0
-        if self.button_move_left:
-            twist.angular.z += 1.0
-        if self.button_move_right:
-            twist.angular.z -= 1.0
-
-        # Publish the twist message
-        self.pub_cmd_vel.publish(twist)
-        # rospy.logdebug(f"Published Twist: linear.x={twist.linear.x}, angular.z={twist.angular.z}")
 
     def save_image_function(self):
         """
@@ -363,6 +402,9 @@ class ControllerGUI(QtWidgets.QMainWindow):
                 # Set the pixmap of the QLabel
                 self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
 
+                # Update the latest_image for logging
+                self.latest_image = cv_image_rgb  # Store the raw RGB image
+
             except CvBridgeError as e:
                 rospy.logerr(f"CvBridge Error: {e}")
 
@@ -407,6 +449,10 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
                 # Set the pixmap of the mainfeed QLabel
                 self.mainfeed.setPixmap(QtGui.QPixmap.fromImage(scaled_image))
+
+
+                # After setting the pixmap, also store the processed image
+                self.latest_image = processed_image_display  # This could be a grayscale or color image
 
             except CvBridgeError as e:
                 rospy.logerr(f"CvBridge Error: {e}")
@@ -545,12 +591,12 @@ class ControllerGUI(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(str)
     def on_prediction_complete(self, predicted_text):
         rospy.loginfo(f"Predicted Text: {predicted_text}")
-        #QtWidgets.QMessageBox.information(self, "Prediction Result", f"Predicted Text: {predicted_text}")
+        # QtWidgets.QMessageBox.information(self, "Prediction Result", f"Predicted Text: {predicted_text}")
 
     @QtCore.pyqtSlot(str)
     def on_prediction_failed(self, error_message):
         rospy.logwarn(f"Prediction Failed: {error_message}")
-        #QtWidgets.QMessageBox.warning(self, "Prediction Failed", f"Prediction failed: {error_message}")
+        # QtWidgets.QMessageBox.warning(self, "Prediction Failed", f"Prediction failed: {error_message}")
 
     # ----- Added Section: Slider Update Functions -----
     def update_hText(self, value):
@@ -571,6 +617,11 @@ class ControllerGUI(QtWidgets.QMainWindow):
     def update_vText_2(self, value):
         self.vText_2.setText(str(value))
     # ----- End of Added Section -----
+
+    def closeEvent(self, event):
+        if self.is_recording:
+            self.data_logger.stop_logging()
+        event.accept()
 
 if __name__ == '__main__':
     # Initialize ROS node in the main thread if not already initialized

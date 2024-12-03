@@ -2,7 +2,6 @@
 
 import sys
 import os
-from matplotlib import pyplot as plt
 import numpy as np
 import rospkg
 import rospy
@@ -12,27 +11,13 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import datetime
-import math
-import threading
-
-from PyQt5.QtCore import pyqtSignal, QThread, pyqtSlot
-
-from gazebo_msgs.srv import SetModelState, SetModelStateRequest
-from gazebo_msgs.msg import ModelState
-
+from PyQt5.QtCore import pyqtSignal
 #from tensorflow.keras.models import load_model  # This can be removed if not used elsewhere
-
-import math
-import threading
-
 sys.path.append('/home/fizzer/fizzcomp/src/controller/src')
 #print(os.path.abspath(__file__))
 from teleport_functions import TeleportHandler
-
 # Import prediction-related components from prediction_module.py
 from prediction_module import load_cnn_model, PredictionThread, inverse_label_dict, IMAGE_WIDTH, IMAGE_HEIGHT
-
-# Remove the label_dict and extract_letters_from_image function definitions from here
 
 class ControllerGUI(QtWidgets.QMainWindow):
     # Define a signal that carries the processed image and billCombo selection
@@ -275,8 +260,6 @@ class ControllerGUI(QtWidgets.QMainWindow):
         pass
 
     # Helper functions for image processing (outline_largest_contour, inverse_perspective_transform, order_points)
-    # Remain unchanged
-
     def outline_largest_contour(self, binary_image):
         contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
@@ -562,12 +545,12 @@ class ControllerGUI(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(str)
     def on_prediction_complete(self, predicted_text):
         rospy.loginfo(f"Predicted Text: {predicted_text}")
-        QtWidgets.QMessageBox.information(self, "Prediction Result", f"Predicted Text: {predicted_text}")
+        #QtWidgets.QMessageBox.information(self, "Prediction Result", f"Predicted Text: {predicted_text}")
 
     @QtCore.pyqtSlot(str)
     def on_prediction_failed(self, error_message):
         rospy.logwarn(f"Prediction Failed: {error_message}")
-        QtWidgets.QMessageBox.warning(self, "Prediction Failed", f"Prediction failed: {error_message}")
+        #QtWidgets.QMessageBox.warning(self, "Prediction Failed", f"Prediction failed: {error_message}")
 
     # ----- Added Section: Slider Update Functions -----
     def update_hText(self, value):

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1038</width>
-    <height>1052</height>
+    <width>1035</width>
+    <height>1079</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -40,7 +40,7 @@
     <property name="geometry">
      <rect>
       <x>20</x>
-      <y>540</y>
+      <y>570</y>
       <width>640</width>
       <height>480</height>
      </rect>
@@ -121,11 +121,11 @@
      <string>Save</string>
     </property>
    </widget>
-   <widget class="QLabel" name="record_indicator">
+   <widget class="QLabel" name="label_billboard_indicator">
     <property name="geometry">
      <rect>
-      <x>890</x>
-      <y>590</y>
+      <x>20</x>
+      <y>530</y>
       <width>20</width>
       <height>20</height>
      </rect>
@@ -540,26 +540,13 @@
      <string>TextLabel</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="monitor_manual_driving">
-    <property name="geometry">
-     <rect>
-      <x>800</x>
-      <y>590</y>
-      <width>80</width>
-      <height>25</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Record</string>
-    </property>
-   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1038</width>
+     <width>1035</width>
      <height>22</height>
     </rect>
    </property>

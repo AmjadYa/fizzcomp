@@ -120,7 +120,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
         # Default HSV bounds
-        self.lower_color = np.array([0, 0, 174])
+        self.lower_color = np.array([0, 0, 99])
         self.upper_color = np.array([179, 91, 255])
 
         # Set default slider values for lower bounds
@@ -324,7 +324,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         # Approximate the contour to a polygon
         peri = cv2.arcLength(largest_contour, True)
-        approx = cv2.approxPolyDP(largest_contour, 0.01 * peri, True)  # 2% approximation
+        approx = cv2.approxPolyDP(largest_contour, 0.01 * peri, True)  # 1% approximation
 
         if len(approx) != 4:
             # Not a quadrilateral; cannot perform perspective transform
@@ -432,7 +432,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
                 mask = cv2.inRange(hsv_image, lower_color, upper_color)
 
                 # Apply morphological operations to remove noise and smooth the mask
-                kernel = np.ones((1, 10), np.uint8)
+                kernel = np.ones((1, 1), np.uint8)
                 mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
                 mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 

@@ -379,7 +379,7 @@ class ControllerGUI(QtWidgets.QMainWindow):
 
         if len(approx) != 4:
             # Not a quadrilateral; cannot perform perspective transform
-            rospy.logwarn("Largest contour is not a quadrilateral. Skipping perspective transform.")
+            # rospy.logwarn("Largest contour is not a quadrilateral. Skipping perspective transform.")
             return None
 
         # Order the points in consistent order: top-left, top-right, bottom-right, bottom-left
@@ -635,13 +635,16 @@ class ControllerGUI(QtWidgets.QMainWindow):
                 IMAGE_HEIGHT
             )
             self.prediction_thread.prediction_complete.connect(self.on_prediction_complete)
+            
+            # Connect the prediction_complete signal to BismillahSequence's slot
+            self.prediction_thread.prediction_complete.connect(self.bismillah_sequence.receive_prediction_result)
+            
             self.prediction_thread.prediction_failed.connect(self.on_prediction_failed)
             self.prediction_thread.start()
 
         except Exception as e:
             rospy.logerr(f"Error during prediction: {e}")
             QtWidgets.QMessageBox.critical(self, "Error", f"An error occurred during prediction: {e}")
-
 
     @QtCore.pyqtSlot(str)
     def on_prediction_complete(self, predicted_text):

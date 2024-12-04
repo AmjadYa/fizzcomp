@@ -4,6 +4,7 @@ import math
 import sys
 import os
 from PyQt5.QtCore import pyqtSignal, QThread
+from matplotlib import pyplot as plt
 from tensorflow.keras.models import load_model # type: ignore
 import numpy as np
 import cv2

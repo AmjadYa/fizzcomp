@@ -4,6 +4,7 @@ import sys
 import rospy
 from gazebo_msgs.srv import SetModelState, SetModelStateRequest
 from gazebo_msgs.msg import ModelState
+from geometry_msgs.msg import Pose
 
 class TeleportHandler:
     def __init__(self, model_name='B1'):
@@ -91,5 +92,47 @@ class TeleportHandler:
                 rospy.loginfo(f"Successfully teleported to {tp_name}.")
             else:
                 rospy.logerr(f"Failed to teleport to {tp_name}: {response.status_message}")
+        except rospy.ServiceException as e:
+            rospy.logerr(f"Service call failed: {e}")
+
+    def teleport_to_pose(self, pose):
+        """
+        Teleports the robot to an arbitrary pose.
+
+        :param pose: Dictionary with 'position' and 'orientation' keys.
+                     Example:
+                     pose = {
+                         'position': {'x': ..., 'y': ..., 'z': ...},
+                         'orientation': {'x': ..., 'y': ..., 'z': ..., 'w': ...}
+                     }
+        """
+        try:
+            position = pose['position']
+            orientation = pose['orientation']
+
+            # Create a ModelState message
+            model_state = ModelState()
+            model_state.model_name = self.model_name
+            model_state.pose.position.x = position['x']
+            model_state.pose.position.y = position['y']
+            model_state.pose.position.z = position['z']
+            model_state.pose.orientation.x = orientation['x']
+            model_state.pose.orientation.y = orientation['y']
+            model_state.pose.orientation.z = orientation['z']
+            model_state.pose.orientation.w = orientation['w']
+            model_state.reference_frame = 'world'  # Relative to the 'world' frame
+
+            # Create the service request
+            set_state_request = SetModelStateRequest()
+            set_state_request.model_state = model_state
+
+            # Call the service to set the model state
+            response = self.set_model_state_service(set_state_request)
+            if response.success:
+                rospy.loginfo(f"Successfully teleported to the specified pose.")
+            else:
+                rospy.logerr(f"Failed to teleport to the specified pose: {response.status_message}")
+        except KeyError as e:
+            rospy.logerr(f"Missing key in pose dictionary: {e}")
         except rospy.ServiceException as e:
             rospy.logerr(f"Service call failed: {e}")

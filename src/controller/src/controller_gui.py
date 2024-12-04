@@ -11,7 +11,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import datetime
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 # from tensorflow.keras.models import load_model  # This can be removed if not used elsewhere
 sys.path.append('/home/fizzer/fizzcomp/src/controller/src')
 # print(os.path.abspath(__file__))
@@ -20,6 +20,7 @@ from teleport_functions import TeleportHandler
 from prediction_module import load_cnn_model, PredictionThread, inverse_label_dict, IMAGE_WIDTH, IMAGE_HEIGHT
 # Import the DataLogger class
 from data_logger import DataLogger  
+from bismillah_sequence import BismillahSequence  # <-- Added Import
 
 class ControllerGUI(QtWidgets.QMainWindow):
     # Define a signal that carries the processed image and billCombo selection
@@ -27,6 +28,9 @@ class ControllerGUI(QtWidgets.QMainWindow):
     
     # Define a signal to send data to DataLogger
     data_signal = pyqtSignal(np.ndarray, float, float)
+    
+    # Define a signal to start the Bismillah sequence
+    start_sequence_signal = pyqtSignal()
 
     def __init__(self):
         super(ControllerGUI, self).__init__()
@@ -68,8 +72,8 @@ class ControllerGUI(QtWidgets.QMainWindow):
         if index != -1:
             self.mainCombo.setCurrentIndex(index)
 
-        # Set 'Raw' as the default option in billCombo
-        bill_index = self.billCombo.findText("Raw")
+        # Set 'Homography' as the default option in billCombo
+        bill_index = self.billCombo.findText("Homography")
         if bill_index != -1:
             self.billCombo.setCurrentIndex(bill_index)
 
@@ -93,6 +97,10 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.button_move_backward = False
         self.button_move_left = False
         self.button_move_right = False
+
+        # Initialize movement commands
+        self.current_linear_speed = 0.0
+        self.current_angular_speed = 0.0
 
         # Start a timer to call publish_movement at regular intervals
         self.timer = QtCore.QTimer()
@@ -171,39 +179,54 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.TP7.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP7'))
         self.TP8.clicked.connect(lambda: self.teleport_handler.teleport_to_position('TP8'))
 
+        # Instantiate BismillahSequence
+        self.bismillah_sequence = BismillahSequence(
+            teleport_handler=self.teleport_handler
+        )
+
+        # Create a QThread and move BismillahSequence to it
+        self.sequence_thread = QThread()
+        self.bismillah_sequence.moveToThread(self.sequence_thread)
+
+        # Connect signals from BismillahSequence to slots in ControllerGUI
+        self.bismillah_sequence.set_linear.connect(self.set_linear_speed)
+        self.bismillah_sequence.set_angular.connect(self.set_angular_speed)
+        self.bismillah_sequence.stop_motion_signal.connect(self.stop_motion)
+        self.bismillah_sequence.request_predict.connect(self.predict_image_function)
+        self.bismillah_sequence.teleport_signal.connect(self.teleport_handler.teleport_to_pose)
+
+        # Connect the start_sequence_signal to the BismillahSequence's run_sequence slot
+        self.start_sequence_signal.connect(self.bismillah_sequence.run_sequence)
+
+        # Start the sequence thread
+        self.sequence_thread.start()
+
+        # Connect the GOGOGO button to emit the start_sequence_signal
+        self.GOGOGO.clicked.connect(self.start_sequence_signal.emit)
+
     def publish_movement(self):
         twist = Twist()
-
-        # Keyboard-controlled movement
-        if QtCore.Qt.Key_W in self.pressed_keys:
-            twist.linear.x += 3.0  # Move forward
-        if QtCore.Qt.Key_S in self.pressed_keys:
-            twist.linear.x -= 3.0  # Move backward
-        if QtCore.Qt.Key_A in self.pressed_keys:
-            twist.angular.z += 2.0  # Turn left
-        if QtCore.Qt.Key_D in self.pressed_keys:
-            twist.angular.z -= 2.0  # Turn right
-
-        # Button-controlled movement
-        if self.button_move_forward:
-            twist.linear.x += 1.0
-        if self.button_move_backward:
-            twist.linear.x -= 1.0
-        if self.button_move_left:
-            twist.angular.z += 1.0
-        if self.button_move_right:
-            twist.angular.z -= 1.0
-
-        # Store the latest twist values for the DataLogger
-        self.latest_linear_x = twist.linear.x
-        self.latest_angular_z = twist.angular.z
-
-        # Publish the twist message
+        twist.linear.x = self.current_linear_speed
+        twist.angular.z = self.current_angular_speed
         self.pub_cmd_vel.publish(twist)
         # rospy.logdebug(f"Published Twist: linear.x={twist.linear.x}, angular.z={twist.angular.z}")
 
         # Emit data to DataLogger
-        self.data_signal.emit(self.latest_image, self.latest_linear_x, self.latest_angular_z)
+        if hasattr(self, 'latest_image'):
+            self.data_signal.emit(self.latest_image, self.current_linear_speed, self.current_angular_speed)
+        else:
+            # Handle case where latest_image is not yet available
+            self.data_signal.emit(np.zeros((480, 640, 3), dtype=np.uint8), self.current_linear_speed, self.current_angular_speed)
+
+    def set_linear_speed(self, speed):
+        self.current_linear_speed = speed
+
+    def set_angular_speed(self, speed):
+        self.current_angular_speed = speed
+
+    def stop_motion(self):
+        self.current_linear_speed = 0.0
+        self.current_angular_speed = 0.0
 
     def toggle_recording(self):
         if not self.is_recording:
@@ -226,42 +249,70 @@ class ControllerGUI(QtWidgets.QMainWindow):
         self.button_move_forward = self.move_forward.isChecked()
         if self.button_move_forward:
             self.move_forward.setStyleSheet("background-color: green")
+            self.current_linear_speed += 1.0
         else:
             self.move_forward.setStyleSheet("")
+            self.current_linear_speed -= 1.0
 
     def toggle_move_backward(self):
         self.button_move_backward = self.move_backward.isChecked()
         if self.button_move_backward:
             self.move_backward.setStyleSheet("background-color: green")
+            self.current_linear_speed -= 1.0
         else:
             self.move_backward.setStyleSheet("")
+            self.current_linear_speed += 1.0
 
     def toggle_move_left(self):
         self.button_move_left = self.move_left.isChecked()
         if self.button_move_left:
             self.move_left.setStyleSheet("background-color: green")
+            self.current_angular_speed += 1.0
         else:
             self.move_left.setStyleSheet("")
+            self.current_angular_speed -= 1.0
 
     def toggle_move_right(self):
         self.button_move_right = self.move_right.isChecked()
         if self.button_move_right:
             self.move_right.setStyleSheet("background-color: green")
+            self.current_angular_speed -= 1.0
         else:
             self.move_right.setStyleSheet("")
+            self.current_angular_speed += 1.0
 
     # Keyboard event handlers
     def keyPressEvent(self, event):
         if not event.isAutoRepeat():
             key = event.key()
-            if key in [QtCore.Qt.Key_W, QtCore.Qt.Key_A, QtCore.Qt.Key_S, QtCore.Qt.Key_D]:
-                self.pressed_keys.add(key)
+            if key == QtCore.Qt.Key_W:
+                self.pressed_keys.add('W')
+                self.current_linear_speed += 3.0
+            elif key == QtCore.Qt.Key_S:
+                self.pressed_keys.add('S')
+                self.current_linear_speed -= 3.0
+            elif key == QtCore.Qt.Key_A:
+                self.pressed_keys.add('A')
+                self.current_angular_speed += 2.0
+            elif key == QtCore.Qt.Key_D:
+                self.pressed_keys.add('D')
+                self.current_angular_speed -= 2.0
 
     def keyReleaseEvent(self, event):
         if not event.isAutoRepeat():
             key = event.key()
-            if key in [QtCore.Qt.Key_W, QtCore.Qt.Key_A, QtCore.Qt.Key_S, QtCore.Qt.Key_D]:
-                self.pressed_keys.discard(key)
+            if key == QtCore.Qt.Key_W:
+                self.pressed_keys.discard('W')
+                self.current_linear_speed -= 3.0
+            elif key == QtCore.Qt.Key_S:
+                self.pressed_keys.discard('S')
+                self.current_linear_speed += 3.0
+            elif key == QtCore.Qt.Key_A:
+                self.pressed_keys.discard('A')
+                self.current_angular_speed -= 2.0
+            elif key == QtCore.Qt.Key_D:
+                self.pressed_keys.discard('D')
+                self.current_angular_speed += 2.0
 
     def save_image_function(self):
         """
@@ -561,16 +612,19 @@ class ControllerGUI(QtWidgets.QMainWindow):
             qimage = pixmap.toImage()
 
             # Convert QImage to RGB888 format
-            qimage = qimage.convertToFormat(QtGui.QImage.Format_RGB888)  # Keep RGB
+            qimage = qimage.convertToFormat(QtGui.QImage.Format_RGB888)
 
             width = qimage.width()
             height = qimage.height()
+            bytes_per_line = qimage.bytesPerLine()
 
-            # Retrieve image data as bytes
-            buffer = qimage.bits().asstring(qimage.byteCount())
+            # Access the raw data
+            ptr = qimage.bits()
+            ptr.setsize(bytes_per_line * height)
+            buffer = np.array(ptr).reshape(height, bytes_per_line)
 
-            # Convert bytes to NumPy array
-            img = np.frombuffer(buffer, dtype=np.uint8).reshape(height, width, 3)  # RGB format
+            # Remove any padding bytes
+            img = buffer[:, :width * 3].reshape(height, width, 3)
 
             # Start the prediction thread using the PredictionThread from prediction_module.py
             self.prediction_thread = PredictionThread(
@@ -588,14 +642,17 @@ class ControllerGUI(QtWidgets.QMainWindow):
             rospy.logerr(f"Error during prediction: {e}")
             QtWidgets.QMessageBox.critical(self, "Error", f"An error occurred during prediction: {e}")
 
+
     @QtCore.pyqtSlot(str)
     def on_prediction_complete(self, predicted_text):
         rospy.loginfo(f"Predicted Text: {predicted_text}")
+        # Optionally, display the prediction result in the GUI
         # QtWidgets.QMessageBox.information(self, "Prediction Result", f"Predicted Text: {predicted_text}")
 
     @QtCore.pyqtSlot(str)
     def on_prediction_failed(self, error_message):
         rospy.logwarn(f"Prediction Failed: {error_message}")
+        # Optionally, display a warning in the GUI
         # QtWidgets.QMessageBox.warning(self, "Prediction Failed", f"Prediction failed: {error_message}")
 
     # ----- Added Section: Slider Update Functions -----
@@ -621,6 +678,11 @@ class ControllerGUI(QtWidgets.QMainWindow):
     def closeEvent(self, event):
         if self.is_recording:
             self.data_logger.stop_logging()
+        # Gracefully stop the sequence thread
+        if self.bismillah_sequence._is_running:
+            self.bismillah_sequence._is_running = False
+            self.sequence_thread.quit()
+            self.sequence_thread.wait()
         event.accept()
 
 if __name__ == '__main__':

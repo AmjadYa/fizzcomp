@@ -5,66 +5,101 @@ import numpy as np
 from threading import Thread, Event
 import rospkg
 from PyQt5.QtCore import QObject, pyqtSlot
+import cv2
+import csv
+from queue import Queue
 
 class DataLogger(QObject):
     def __init__(self):
         super(DataLogger, self).__init__()
-        self.data_log = []
         self.logging = False
-        self.thread = None
+        self.save_queue = Queue()
+        self.save_thread = None
         self.stop_event = Event()
+        self.csv_file = None
+        self.csv_writer = None
 
     def start_logging(self):
         if not self.logging:
             self.logging = True
             self.stop_event.clear()
-            self.thread = Thread(target=self._log_data_loop)
-            self.thread.start()
+            self.save_thread = Thread(target=self._save_data_loop, daemon=True)
+            self.save_thread.start()
             rospy.loginfo("Data logging started.")
 
-    def stop_logging(self):
-        if self.logging:
-            self.logging = False
-            self.stop_event.set()
-            self.thread.join()
-            self.thread = None
-            rospy.loginfo("Data logging stopped.")
-            self.save_logged_data()
-
-    def _log_data_loop(self):
-        rate = rospy.Rate(10)  # 10 Hz (every 100 ms)
-        while not self.stop_event.is_set():
-            rate.sleep()  # Wait for next interval
-            # Logging is handled via slots; nothing needed here
-
-    @pyqtSlot(np.ndarray, float, float)
-    def receive_data(self, img_array, linear_x, angular_z):
-        if self.logging:
-            if img_array is not None:
-                self.data_log.append((img_array, linear_x, angular_z))
-                rospy.logdebug(f"Logged image and twist: linear.x={linear_x}, angular.z={angular_z}")
-            else:
-                rospy.logwarn("No image data available to log.")
-
-    def save_logged_data(self):
-        try:
-            # Define the directory to save the logged data
+            # Initialize CSV file
             rospack = rospkg.RosPack()
             package_path = rospack.get_path('controller')
             save_dir = os.path.join(package_path, 'logged_data')
             os.makedirs(save_dir, exist_ok=True)
 
-            # Generate a timestamped filename
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_path = os.path.join(save_dir, f"data_log_{timestamp}.npz")
+            csv_filename = os.path.join(save_dir, f"twist_data_{timestamp}.csv")
 
-            # Convert the log to structured arrays
-            images = [entry[0] for entry in self.data_log]
-            linear_twists = [entry[1] for entry in self.data_log]
-            angular_twists = [entry[2] for entry in self.data_log]
+            try:
+                self.csv_file = open(csv_filename, mode='w', newline='')
+                self.csv_writer = csv.writer(self.csv_file)
+                # Write CSV header
+                self.csv_writer.writerow(['timestamp', 'image_filename', 'linear_x', 'angular_z'])
+                rospy.loginfo(f"CSV file created at {csv_filename}")
+            except Exception as e:
+                rospy.logerr(f"Failed to create CSV file: {e}")
+                self.logging = False
 
-            # Save as a compressed NumPy file
-            np.savez_compressed(file_path, images=images, linear_twists=linear_twists, angular_twists=angular_twists)
-            rospy.loginfo(f"Logged data saved to {file_path}")
-        except Exception as e:
-            rospy.logerr(f"Error saving logged data: {e}")
+    def stop_logging(self):
+        if self.logging:
+            self.logging = False
+            self.stop_event.set()
+            self.save_thread.join()
+            self.save_thread = None
+            rospy.loginfo("Data logging stopped.")
+            if self.csv_file:
+                self.csv_file.close()
+                rospy.loginfo("CSV file closed.")
+
+    def _save_data_loop(self):
+        while not self.stop_event.is_set():
+            try:
+                # Wait for data to save, with timeout to allow checking stop_event
+                data = self.save_queue.get(timeout=0.1)
+                img_array, linear_x, angular_z, timestamp = data
+
+                # Define the directory to save the logged data
+                rospack = rospkg.RosPack()
+                package_path = rospack.get_path('controller')
+                save_dir = os.path.join(package_path, 'logged_data', 'images')
+                os.makedirs(save_dir, exist_ok=True)
+
+                # Generate a timestamped filename
+                img_filename = f"image_{timestamp}.png"
+                img_path = os.path.join(save_dir, img_filename)
+
+                # Convert the image array from RGB to BGR for OpenCV
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+                # Save the image as PNG
+                cv2.imwrite(img_path, img_bgr)
+                rospy.logdebug(f"Image saved to {img_path}")
+
+                # Write the twist data to CSV
+                if self.csv_writer:
+                    self.csv_writer.writerow([timestamp, img_filename, linear_x, angular_z])
+                    rospy.logdebug(f"Twist data logged for {img_filename}")
+
+                self.save_queue.task_done()
+
+            except Exception as e:
+                # Handle empty queue or other exceptions
+                continue
+
+    @pyqtSlot(np.ndarray, float, float)
+    def receive_data(self, img_array, linear_x, angular_z):
+        if self.logging:
+            if img_array is not None:
+                # Generate a precise timestamp
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                # Put the data into the save queue
+                self.save_queue.put((img_array, linear_x, angular_z, timestamp))
+                rospy.logdebug(f"Data queued for image_{timestamp}.png")
+            else:
+                rospy.logwarn("No image data available to log.")

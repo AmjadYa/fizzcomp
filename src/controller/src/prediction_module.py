@@ -158,6 +158,8 @@ class PredictionThread(QThread):
             letters = extract_letters_from_image(self.img)
             if not letters:
                 self.prediction_failed.emit("No letters were extracted from the image.")
+                default_message = "GODWHY"
+                self.prediction_complete.emit(default_message)
                 return
 
             predictions = []

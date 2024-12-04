@@ -191,7 +191,7 @@ class BismillahSequence(QObject):
             rospy.loginfo("Step 13: Motion stopped.")
             # Step 14: Turn Left
             self.set_linear.emit(0.0)
-            self.set_angular.emit(2.0)
+            self.set_angular.emit(1.8)
             rospy.loginfo("Step 14: Turn left.")
             QTimer.singleShot(2300, self.stop_motion)
 
@@ -212,8 +212,8 @@ class BismillahSequence(QObject):
             rospy.loginfo(f"Published sixth_board: {sixth_board}")
             # Step 16: Teleport to Final Position
             teleport_pose3 = {
-                'position': {'x': -4.063470518828452, 'y': -2.2564473800170513, 'z': 0.04000018393550679},
-                'orientation': {'x': -2.000162652701596e-07, 'y': -5.830896379528323e-07, 'z': -0.3377707635826839, 'w': -0.9412284054725457}
+                'position': {'x': -4.048969918538875, 'y': -2.1927999150558106, 'z': 0.04000033111230297},
+                'orientation': {'x': -7.721197054941669e-07, 'y': 4.2613242121936884e-07, 'z': -0.17655821924694795, 'w': -0.9842901986790121}
             }
             self.teleport_signal.emit(teleport_pose3)
             rospy.loginfo("Step 16: Teleport to final position.")

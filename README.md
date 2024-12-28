@@ -1,3 +1,12 @@
+# DECEMBER 28TH:
+
+CHECK OUT THE FINAL REPORT! IT'S PRETTY GOOD! WOW!
+
+
+
+_______________
+
+
 # Nov 21st, 2024
 Fixing robot dimensions (I LIED DIDN'T DO THIS YET), integrating dev tools ui
 # Nov 24th, 2024

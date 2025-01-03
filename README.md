@@ -1,8 +1,8 @@
-# DECEMBER 28TH:
+# Jan 2nd, 2025:
+
+https://meej.ca/project/cnn-letter-detecting-ros-sim/
 
 CHECK OUT THE FINAL REPORT! IT'S PRETTY GOOD! WOW!
-
-
 
 _______________
 
